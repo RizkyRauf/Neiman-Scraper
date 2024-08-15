@@ -88,59 +88,100 @@ def extract_product_data_from_props(product_data, url):
 
 def extract_product_data_from_catalog(product_data, url):
     """
-    Extracts product data from the 'productCatalog' dictionary.
+    Mengekstrak data produk dari dictionary 'productCatalog'.
 
     Args:
-        product_data (dict): The 'productCatalog' dictionary containing product information.
-        url (str): The URL of the product page.
+        product_data (dict): Dictionary 'productCatalog' yang berisi informasi produk.
+        url (str): URL halaman produk.
 
     Returns:
-        list: A list of dictionaries containing extracted product data.
+        list: Daftar dictionary yang berisi data produk yang diekstrak.
     """
     extracted_product_details = []
+
     if 'product' in product_data:
-        category_hierarchy = product_data['product'].get('hierarchy', [])
+        product_info = product_data['product']
+
+        # Mengekstrak kategori produk
+        category_hierarchy = product_info.get('hierarchy', [])
         category_levels = []
         for category in category_hierarchy:
             category_levels.extend([value for value in category.values() if value])
         product_category = " > ".join(category_levels)
-        product_id = product_data['product'].get('id', '')
-        product_name = product_data['product'].get('linkedData', {}).get('name', '')
-        product_brand = product_data['product'].get('linkedData', {}).get('brand', '')
-        product_description = clean_description(product_data['product'].get('linkedData', {}).get('description', ''))
-        product_image_url = product_data['product'].get('linkedData', {}).get('image', '')
-        product_currency = product_data['product'].get('linkedData', {}).get('offers', {}).get('priceCurrency', '')
-        product_low_price = product_data['product'].get('linkedData', {}).get('offers', {}).get('lowPrice', '')
-        product_high_price = product_data['product'].get('linkedData', {}).get('offers', {}).get('highPrice', '')
-        product_offers = product_data['product'].get('linkedData', {}).get('offers', {}).get('offers', [])
-        product_colors = [offer.get('itemOffered', {}).get('color', '') for offer in product_offers if offer.get('itemOffered', {}).get('color', '')]
-        product_colors_str = ", ".join(product_colors)
 
-        product_skus_detail = product_data['product'].get('skus', [])
+        # Mengekstrak informasi dasar produk
+        product_id = product_info.get('id', '')
+        product_name = product_info.get('linkedData', {}).get('name', '')
+        product_brand = product_info.get('linkedData', {}).get('brand', '')
+        product_description = clean_description(product_info.get('linkedData', {}).get('description', ''))
+        product_currency = product_info.get('linkedData', {}).get('offers', {}).get('priceCurrency', '')
+        product_low_price = product_info.get('linkedData', {}).get('offers', {}).get('lowPrice', '')
+        product_high_price = product_info.get('linkedData', {}).get('offers', {}).get('highPrice', '')
+
+        # Mengekstrak opsi produk (ukuran, warna, dan gambar)
+        product_sizes = []
+        product_colors_images = []
+        product_options = product_info.get('options', {}).get('productOptions', [])
+        for option in product_options:
+            option_label = option.get('label', '').lower()
+            if option_label == 'size':
+                for size in option.get('values', []):
+                    size_name = size.get('name', '-')
+                    product_sizes.append(size_name)
+            elif option_label == 'color':
+                for color in option.get('values', []):
+                    color_name = color.get('name', '-')
+                    image_urls = []
+                    main_image_url = color.get('media', {}).get('main', {}).get('dynamic', {}).get('url', '-')
+                    image_urls.append(f"https:{main_image_url}")
+                    image_alternate_url = color.get('media', {}).get('alternate', {})
+                    for value in image_alternate_url.values():
+                        alternate_image_url = value.get('dynamic', {}).get('url', '-')
+                        image_urls.append(f"https:{alternate_image_url}")
+                    product_colors_images.append({
+                        "Color": color_name,
+                        "Image URL": image_urls
+                    })
+
+        product_sizes_str = ', '.join(product_sizes) if product_sizes else '-'
+        product_colors_str = ', '.join([color['Color'] for color in product_colors_images]) if product_colors_images else '-'
+
+        # Mengekstrak detail SKU produk
+        product_skus_detail = product_info.get('skus', [])
         product_skus_data = []
         for sku in product_skus_detail:
             sku_id = sku.get('id', '-')
             sku_status = sku.get('stockStatusMessage', '-')
-            sku_color = sku.get('color', {}).get('name', '')
+            sku_color = sku.get('color', {}).get('name', '-')
             sku_stock_level = sku.get('stockLevel', '-')
+            sku_size = sku.get('size', {}).get('name', '-')
+
+            # Memberikan nilai default "-" jika tidak ada nilai
+            sku_id = sku_id if sku_id != '-' else "-"
+            sku_status = sku_status if sku_status != '-' else "-"
+            sku_color = sku_color if sku_color != '-' else "-"
+            sku_stock_level = str(sku_stock_level) if sku_stock_level != '-' else "-"
+            sku_size = sku_size if sku_size != '-' else "-"
+
             product_skus_data.append({
                 "ID": sku_id,
                 "Status": sku_status,
                 "Color": sku_color,
+                "Size": sku_size,
                 "Stock Level": sku_stock_level
             })
 
         extracted_product_details.append({
+            "Url": url,
             "ID": product_id,
             "Category": product_category,
             "Name": product_name,
             "Brand": product_brand,
             "Description": product_description,
             "Price": f"{product_currency} {product_low_price}",
-            # "High Price": f"{product_currency} {product_high_price}",
+            "Size": product_sizes_str,
             "Color": product_colors_str,
-            "Image URL": product_image_url,
-            "Url": url,
+            "Details Product Image URL": product_colors_images,
             "Skus": product_skus_data
         })
 

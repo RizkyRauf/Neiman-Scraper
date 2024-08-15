@@ -1,14 +1,15 @@
 import json
 import re
 import logging
-import random
-import requests
-from bs4 import BeautifulSoup
+import aiohttp
+import asyncio
+import lxml.html
+from multiprocessing import Pool
+from itertools import chain
+import diskcache
 from src.scraper import NeimanMarcusScraper
 from src.utils import json_data, setup_logging
 from src.item_extract import extract_product_data
-import threading
-from time import sleep
 
 setup_logging()
 
@@ -24,7 +25,7 @@ class MainScraper:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         # To store scraped data temporarily
-        self.cache = {}  
+        self.cache = diskcache.Cache("./cache")
 
     @staticmethod
     def clean_url(url):
@@ -39,7 +40,7 @@ class MainScraper:
         """
         return re.sub(r'\?.*', '', url)
 
-    def scrape_product_page(self, url):
+    async def scrape_product_page(self, url):
         """
         Scrapes product data from a given product page URL.
 
@@ -55,16 +56,18 @@ class MainScraper:
             return self.cache[cleaned_url]
 
         try:
-            response = requests.get(cleaned_url, headers=self.headers)
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self.headers) as response:
+                    response.raise_for_status()
+                    html = await response.text()
+        except aiohttp.ClientError as e:
             logging.error(f"Error accessing URL {cleaned_url}: {e}")
             return []
 
-        soup = BeautifulSoup(response.content, 'html.parser')
-        script_tag = soup.find('script', {'type': 'application/json'})
+        tree = lxml.html.fromstring(html)
+        script_tag = tree.xpath('//script[@type="application/json"]/text()')
         if script_tag:
-            script_content = script_tag.string.strip()
+            script_content = script_tag[0].strip()
             data = json.loads(script_content)
             product_data = extract_product_data(data, cleaned_url)
             self.cache[cleaned_url] = product_data
@@ -73,7 +76,7 @@ class MainScraper:
             logging.warning("Product data not found.")
             return []
 
-    def main(self, url):
+    async def main(self, url):
         """
         Main function to scrape product data from the given URL.
 
@@ -82,40 +85,34 @@ class MainScraper:
         """
         product_urls = self.url_scraper.scrape_all_product_urls(url)
         file_name = re.sub(r'[\?/]', '_', url.split('/')[-1])
-        all_data = []
-
-        # Using threading for parallel scraping
-        threads = []
-        for product_url in product_urls:
-            thread = threading.Thread(target=self.scrape_and_append, args=(product_url, all_data))
-            threads.append(thread)
-            thread.start()
-            
-            # Random delay to avoid rate limiting
-            sleep(random.uniform(0.5, 1))
-
-        for thread in threads:
-            thread.join()
-
+        tasks = [self.scrape_product_page(url) for url in product_urls]
+        all_data = await asyncio.gather(*tasks)
         json_data(all_data, f"{file_name}.json", 'data')
 
-    def scrape_and_append(self, url, data_list):
-        """
-        Scrapes product data from a given URL and appends it to a list.
-
-        Args:
-            url (str): The URL of the product page.
-            data_list (list): The list to append the scraped data.
-        """
-        product_data = self.scrape_product_page(url)
-        data_list.extend(product_data)
+    def scrape_and_append(self, url):
+        product_data = asyncio.run(self.scrape_product_page(url))
+        return product_data
 
 if __name__ == "__main__":
     with open("url_category.txt", "r", encoding="utf8") as file:
-        url_category = file.read()
-        
-    url_category = url_category.split()
+        url_category = file.read().splitlines()
+
     for url in url_category:
         print("Processing: ", url)
         main_scraper = MainScraper()
-        main_scraper.main(url)
+        product_urls = main_scraper.url_scraper.scrape_all_product_urls(url)
+        with Pool() as pool:
+            product_data = pool.map(main_scraper.scrape_and_append, product_urls)
+            all_data = list(chain(*product_data))
+
+        # Filter out products with invalid or empty values
+        valid_products = [product for product in all_data if product["Brand"] and product["Name"] and product["Price"] and product["ID"]]
+
+        # Flatten the "Details Product Image URL" and "Skus" lists
+        for product in valid_products:
+            product["Details Product Image URL"] = [image for image_dict in product["Details Product Image URL"] for image in image_dict["Image URL"]]
+            product["Skus"] = [sku for sku in product["Skus"]]
+
+        # Save the cleaned data to a JSON file with the category URL as the filename
+        file_name = re.sub(r'[\?/]', '_', url.split('/')[-1]) + ".json"
+        json_data(valid_products, file_name, 'data')

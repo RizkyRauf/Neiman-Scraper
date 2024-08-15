@@ -3,3 +3,4 @@ logging/
 main_backup.py
 data/
 venv/
+cache/
