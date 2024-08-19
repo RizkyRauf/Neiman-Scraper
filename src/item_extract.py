@@ -57,13 +57,17 @@ def extract_product_data_from_props(product_data, url):
                 product_colors = [color['name'] for color in option['values']]
 
     if 'media' in product_data:
-        media_data = product_data['media']
-        if 'main' in media_data and 'dynamic' in media_data['main']:
-            product_images.append(f"https:{media_data['main']['dynamic']['url']}")
-        if 'alternate' in media_data:
-            for alternate_view in media_data['alternate'].values():
-                if 'dynamic' in alternate_view:
-                    product_images.append(f"https:{alternate_view['dynamic']['url']}")
+      media_data = product_data['media']
+      if 'main' in media_data and 'dynamic' in media_data['main']:
+          main_image_url = media_data['main']['dynamic'].get('url', '')
+          if main_image_url:
+              product_images.append(f"https:{main_image_url}")
+      if 'alternate' in media_data:
+          for alternate_view in media_data['alternate'].values():
+              if 'dynamic' in alternate_view:
+                  alternate_image_url = alternate_view['dynamic'].get('url', '')
+                  if alternate_image_url:
+                      product_images.append(f"https:{alternate_image_url}")
 
     if not product_sizes:
         product_sizes = ["-"]
@@ -74,21 +78,23 @@ def extract_product_data_from_props(product_data, url):
 
     product_skus_detail = product_data.get('skus', [])
     product_skus_data = []
-    for sku in product_skus_detail:
-        sku_name = sku.get('id', '')
-        sku__color = sku.get('color', {}).get('name', '')
-        sku_size = sku.get('size', {}).get('name', '')
-        sku_stock = sku.get('stockStatusMessage')
-        sku_stock_count = sku.get('stockLevel')
-        sku_media = sku.get('media', {}).get('main', {}).get('dynamic', {}).get('url', '')
-        product_skus_data.append({
-            "ID": sku_name,
-            "Color": sku__color,
-            "Size": sku_size,
-            "Image": f"https:{sku_media}",
-            "Status": sku_stock,
-            "Stock": sku_stock_count
-        })
+    if 'skus' in product_data:
+        product_skus_detail = product_data['skus']
+        for sku in product_skus_detail:
+            sku_name = sku.get('id', '')
+            sku__color = sku.get('color', {}).get('name', '')
+            sku_size = sku.get('size', {}).get('name', '')
+            sku_stock = sku.get('stockStatusMessage')
+            sku_stock_count = sku.get('stockLevel')
+            sku_media = sku.get('media', {}).get('main', {}).get('dynamic', {}).get('url', '')
+            product_skus_data.append({
+                "ID": sku_name,
+                "Status": sku_stock,
+                "Color": sku__color,
+                "Size": sku_size,
+                "Image URL": f"https:{sku_media}",
+                "Stock": sku_stock_count
+            })
 
     extracted_product_data = {
         "ID": product_id,
@@ -101,7 +107,7 @@ def extract_product_data_from_props(product_data, url):
         "Colors": product_colors,
         "Images": product_images,
         "URL": url,
-        "SKU": product_skus_data
+        "Skus": product_skus_data
     }
 
     return extracted_product_data
@@ -170,27 +176,30 @@ def extract_product_data_from_catalog(product_data, url):
         # Mengekstrak detail SKU produk
         product_skus_detail = product_info.get('skus', [])
         product_skus_data = []
-        for sku in product_skus_detail:
-            sku_id = sku.get('id', '-')
-            sku_status = sku.get('stockStatusMessage', '-')
-            sku_color = sku.get('color', {}).get('name', '-')
-            sku_stock_level = sku.get('stockLevel', '-')
-            sku_size = sku.get('size', {}).get('name', '-')
+        if 'skus' in product_info:
+            product_skus_detail = product_info['skus']
+            for sku in product_skus_detail:
+                sku_id = sku.get('id', '-')
+                sku_status = sku.get('stockStatusMessage', '-')
+                sku_color = sku.get('color', {}).get('name', '-')
+                sku_stock_level = sku.get('stockLevel', '-')
+                sku_size = sku.get('size', {}).get('name', '-')
 
-            # Memberikan nilai default "-" jika tidak ada nilai
-            sku_id = sku_id if sku_id != '-' else "-"
-            sku_status = sku_status if sku_status != '-' else "-"
-            sku_color = sku_color if sku_color != '-' else "-"
-            sku_stock_level = str(sku_stock_level) if sku_stock_level != '-' else "-"
-            sku_size = sku_size if sku_size != '-' else "-"
+                # Memberikan nilai default "-" jika tidak ada nilai
+                sku_id = sku_id if sku_id != '-' else "-"
+                sku_status = sku_status if sku_status != '-' else "-"
+                sku_color = sku_color if sku_color != '-' else "-"
+                sku_stock_level = str(sku_stock_level) if sku_stock_level != '-' else "-"
+                sku_size = sku_size if sku_size != '-' else "-"
 
-            product_skus_data.append({
-                "ID": sku_id,
-                "Status": sku_status,
-                "Color": sku_color,
-                "Size": sku_size,
-                "Stock Level": sku_stock_level
-            })
+                product_skus_data.append({
+                    "ID": sku_id,
+                    "Status": sku_status,
+                    "Color": sku_color,
+                    "Size": sku_size,
+                    "Image URL": "-",
+                    "Stock Level": sku_stock_level
+                })
 
         extracted_product_details.append({
             "Url": url,
@@ -202,7 +211,7 @@ def extract_product_data_from_catalog(product_data, url):
             "Price": f"{product_currency} {product_low_price}",
             "Size": product_sizes_str,
             "Color": product_colors_str,
-            "Details Product Image URL": product_colors_images,
+            "Images": product_colors_images,
             "Skus": product_skus_data
         })
 
