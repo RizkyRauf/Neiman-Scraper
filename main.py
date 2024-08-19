@@ -108,10 +108,13 @@ if __name__ == "__main__":
         # Filter out products with invalid or empty values
         valid_products = [product for product in all_data if product["Brand"] and product["Name"] and product["Price"] and product["ID"]]
 
-        # Flatten the "Details Product Image URL" and "Skus" lists
+        # Flatten the "Images" list
         for product in valid_products:
-            product["Details Product Image URL"] = [image for image_dict in product["Details Product Image URL"] for image in image_dict["Image URL"]]
-            product["Skus"] = [sku for sku in product["Skus"]]
+          product["Images"] = product["Images"]
+          if "Skus" in product:
+              product["Skus"] = [sku for sku in product["Skus"]]
+          else:
+              None
 
         # Save the cleaned data to a JSON file with the category URL as the filename
         file_name = re.sub(r'[\?/]', '_', url.split('/')[-1]) + ".json"
